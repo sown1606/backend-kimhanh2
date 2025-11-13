@@ -1,0 +1,25 @@
+{
+  "kind": "singleType",
+  "collectionName": "gold-prices",
+  "info": {
+    "singularName": "gold-price",
+    "pluralName": "gold-prices",
+    "displayName": "Gold Price"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "i18n": {
+      "localized": false
+    }
+  },
+  "attributes": {
+    "buy_price": {
+      "type": "integer"
+    },
+    "sell_price": {
+      "type": "integer"
+    }
+  }
+}

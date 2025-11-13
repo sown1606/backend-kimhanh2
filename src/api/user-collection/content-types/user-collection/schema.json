@@ -1,0 +1,26 @@
+{
+  "kind": "collectionType",
+  "collectionName": "user-collections",
+  "info": {
+    "singularName": "user-collection",
+    "pluralName": "user-collections",
+    "displayName": "User Collection"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "i18n": {
+      "localized": false
+    }
+  },
+  "attributes": {
+    "phone": {
+      "type": "string",
+      "unique": true
+    },
+    "products_data": {
+      "type": "json"
+    }
+  }
+}
