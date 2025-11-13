@@ -1,12 +1,11 @@
 'use strict';
-module.exports = {
+export default {
   routes: [
     {
       method: 'POST',
       path: '/ai/chat',
-      handler: 'ai.chat',
+      handler: 'api::ai.ai.chat',
       config: {
-        // Cho phép user 'public' (chưa đăng nhập) được chat
         auth: false,
       },
     },
