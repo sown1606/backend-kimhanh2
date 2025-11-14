@@ -10,9 +10,11 @@ const PROJECT_ID =
     '';
 const REGION = (process.env.VERTEX_REGION || 'us-central1').trim();
 
-// Ưu tiên model giống ALLMYNE, có thể chỉnh trong .env
-const MODEL_PRIORITY = (process.env.VERTEX_GEMINI_PRIORITY ||
-    'gemini-2.5-flash,gemini-1.5-flash,gemini-1.0-pro')
+// Ưu tiên model, có thể chỉnh trong .env
+const MODEL_PRIORITY = (
+    process.env.VERTEX_GEMINI_PRIORITY ||
+    'gemini-2.5-flash,gemini-1.5-flash,gemini-1.0-pro'
+)
     .split(',')
     .map((m) => m.trim())
     .filter(Boolean);
@@ -24,7 +26,62 @@ if (!REGION) {
     console.warn('[Vertex Chat] Missing VERTEX_REGION env');
 }
 
-// Lấy access token từ service account (GOOGLE_APPLICATION_CREDENTIALS)
+// ===== Simple in-memory rate limit: 50 req / user / 24h =====
+const MAX_REQUESTS_PER_USER = 50;
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+type Bucket = {
+    count: number;
+    resetAt: number;
+};
+
+const requestBuckets: Map<string, Bucket> = new Map();
+
+const getUserKey = (user: any, ctx: any): string => {
+    const primary = user?.primary || {};
+    const name = primary.name || user?.name || 'unknown';
+    const dob = primary.dob || user?.dob || '';
+    const ip =
+        (ctx?.request &&
+            (ctx.request.ip || ctx.request.headers['x-forwarded-for'])) ||
+        ctx?.ip ||
+        '';
+    // Key đơn giản đủ dùng cho demo
+    return `${name}|${dob}|${ip}`;
+};
+
+const checkRateLimit = (user: any, ctx: any) => {
+    const key = getUserKey(user, ctx);
+    const now = Date.now();
+
+    let bucket = requestBuckets.get(key);
+    if (!bucket || bucket.resetAt <= now) {
+        bucket = {
+            count: 0,
+            resetAt: now + WINDOW_MS,
+        };
+    }
+
+    if (bucket.count >= MAX_REQUESTS_PER_USER) {
+        requestBuckets.set(key, bucket);
+        return {
+            allowed: false,
+            remaining: 0,
+            resetAt: bucket.resetAt,
+        };
+    }
+
+    bucket.count += 1;
+    requestBuckets.set(key, bucket);
+
+    return {
+        allowed: true,
+        remaining: MAX_REQUESTS_PER_USER - bucket.count,
+        resetAt: bucket.resetAt,
+    };
+};
+
+// ===== Lấy access token từ service account (GOOGLE_APPLICATION_CREDENTIALS) =====
 const getAccessToken = async () => {
     const auth = new GoogleAuth({
         scopes: ['https://www.googleapis.com/auth/cloud-platform'],
@@ -37,26 +94,67 @@ const getAccessToken = async () => {
     return token.token;
 };
 
-// ===== Prompt phong thủy (giữ logic từ FE) =====
+// ===== Prompt phong thủy (viết rõ ràng, thân thiện, tiếng Việt) =====
 const getFengShuiPrompt = (user: any): string => {
-    let prompt =
-        'Bạn là KimHanh_II AI, một chuyên gia phong thủy Việt Nam chuyên sâu về trang sức vàng. ' +
-        'Hãy đưa ra lời khuyên cho khách hàng dựa trên thông tin sau. ' +
-        'Phân tích mệnh, tuổi, và các yếu tố tương sinh, tương khắc để gợi ý loại vàng, kiểu dáng, và họa tiết trang sức phù hợp nhất ' +
-        'để mang lại may mắn, tài lộc, và hạnh phúc. Viết bằng tiếng Việt, giọng văn trang trọng và am hiểu.\n\n';
+    let prompt = '';
 
+    // Giới thiệu & vai trò
+    prompt +=
+        'Bạn là **Kim Hạnh II AI** – trợ lý phong thủy & trang sức vàng của tiệm vàng Kim Hạnh II.\n';
+    prompt +=
+        'Nhiệm vụ của bạn là tư vấn NGẮN GỌN, DỄ HIỂU, THÂN THIỆN nhưng vẫn CHUYÊN NGHIỆP cho khách hàng.\n';
+    prompt +=
+        'Luôn xưng là "em" và gọi khách là "anh" hoặc "chị" (tùy ngữ cảnh câu chữ cho tự nhiên).\n\n';
+
+    prompt +=
+        'Hãy dựa trên thông tin dưới đây để phân tích mệnh, ngũ hành và gợi ý trang sức vàng phù hợp.\n\n';
+
+    // Thông tin khách hàng
     prompt += '**Thông tin khách hàng:**\n';
-    prompt += `- **Họ và tên:** ${user?.primary?.name || 'Không rõ'}\n`;
-    prompt += `- **Ngày tháng năm sinh:** ${user?.primary?.dob || 'Không rõ'}\n`;
+    prompt += `- Họ và tên: ${user?.primary?.name || 'Không rõ'}\n`;
+    prompt += `- Ngày tháng năm sinh (dương lịch): ${
+        user?.primary?.dob || 'Không rõ'
+    }\n`;
 
     if (user?.purchaseType === 'wedding' && user?.partner) {
         prompt += '\n**Thông tin người phối ngẫu (vợ/chồng):**\n';
-        prompt += `- **Họ và tên:** ${user.partner.name || 'Không rõ'}\n`;
-        prompt += `- **Ngày tháng năm sinh:** ${user.partner.dob || 'Không rõ'}\n\n`;
-        prompt += 'Đây là trang sức cưới, hãy tư vấn để hòa hợp cho cả hai vợ chồng.';
+        prompt += `- Họ và tên: ${user.partner.name || 'Không rõ'}\n`;
+        prompt += `- Ngày tháng năm sinh (dương lịch): ${
+            user.partner.dob || 'Không rõ'
+        }\n\n`;
+        prompt +=
+            'Đây là trang sức cưới. Hãy ưu tiên tư vấn sao cho hai vợ chồng HÒA HỢP, hỗ trợ nhau về tài lộc và hạnh phúc gia đình.\n';
     } else {
-        prompt += '\nĐây là trang sức mua cho cá nhân.';
+        prompt += '\nĐây là khách đang mua trang sức cho chính bản thân.\n';
     }
+
+    // Cách trình bày câu trả lời
+    prompt += '\n---\n\n';
+    prompt += '🎯 **CÁCH TRẢ LỜI CHO KHÁCH:**\n';
+    prompt +=
+        'Hãy trả lời theo 3–5 mục rõ ràng, dùng tiêu đề in đậm theo dạng Markdown:\n';
+    prompt +=
+        '1. **Mở đầu & mệnh tổng quan** – Chào khách (anh/chị), tóm tắt mệnh/ngũ hành và vài tính cách nổi bật (2–3 câu).\n';
+    prompt +=
+        '2. **Màu sắc & loại vàng hợp mệnh** – Nêu rõ nên ưu tiên loại vàng/màu nào (vàng 24K, 18K, 14K…), màu nào nên hạn chế để tránh xung khắc.\n';
+    prompt +=
+        '3. **Gợi ý kiểu trang sức** – Tập trung gợi ý vòng tay, lắc, nhẫn, bông tai… kiểu trơn, đính đá, chạm khắc… sao cho:\n';
+    prompt +=
+        '   - Hợp mệnh, hỗ trợ tài lộc, bình an.\n';
+    prompt +=
+        '   - Dễ đeo hằng ngày hoặc phù hợp dịp cưới hỏi (nếu là trang sức cưới).\n';
+    prompt +=
+        '4. **Lời khuyên thêm từ Kim Hạnh II** – 1–2 ý nhỏ về cách phối trang sức, giữ gìn may mắn, cách chọn số lượng món cho cân đối.\n\n';
+
+    // Quy định bắt buộc
+    prompt += '**QUY ĐỊNH BẮT BUỘC:**\n';
+    prompt += '- Chỉ trả lời bằng **tiếng Việt**.\n';
+    prompt +=
+        '- Không nhắc lại yêu cầu của hệ thống, không liệt kê dàn ý, hãy viết thẳng bài tư vấn hoàn chỉnh.\n';
+    prompt +=
+        '- Giọng văn thân thiện, gần gũi nhưng không quá suồng sã; không dùng từ ngữ thô tục.\n';
+    prompt +=
+        '- Không cần xin lỗi trừ khi thực sự không thể trả lời được.\n';
 
     return prompt;
 };
@@ -67,10 +165,11 @@ const buildContentsForVertex = (
     history: any[] = [],
     newMessage?: string
 ) => {
-    // Nếu có newMessage & history: coi như chat tiếp
+    // Nếu có hội thoại trước đó + câu hỏi mới: tiếp tục cuộc trò chuyện
     if (newMessage && history.length > 0) {
         const contents = history.map((msg: any) => ({
-            role: msg.role === 'assistant' ? 'model' : 'user',
+            // FE đang dùng role: 'user' | 'model'
+            role: msg.role === 'model' ? 'model' : 'user',
             parts: [{ text: msg.content || '' }],
         }));
 
@@ -82,7 +181,7 @@ const buildContentsForVertex = (
         return contents;
     }
 
-    // Lần đầu: dùng prompt phong thủy
+    // Lần đầu: chỉ gửi prompt tư vấn ban đầu dựa trên thông tin khách
     const prompt = getFengShuiPrompt(user);
     return [
         {
@@ -138,7 +237,6 @@ const generateWithVertex = async (contents: any[]) => {
                     text
                 );
 
-                // Lỗi cho phép fallback: 429 / 500 / 503 / UNAVAILABLE...
                 if ([429, 500, 503].includes(res.status)) {
                     lastError = new Error(
                         `Vertex overloaded (${res.status}) for ${modelName}: ${text}`
@@ -146,7 +244,6 @@ const generateWithVertex = async (contents: any[]) => {
                     continue;
                 }
 
-                // Lỗi khác: dừng luôn
                 throw new Error(
                     `Vertex error ${res.status} for ${modelName}: ${text}`
                 );
@@ -169,7 +266,6 @@ const generateWithVertex = async (contents: any[]) => {
             const msg = String(err?.message || '');
             console.error(`[Vertex Chat] Exception for ${modelName}:`, msg);
 
-            // Nếu lỗi kiểu quá tải / quota / unavailable → cho phép fallback
             if (
                 /quota|exceeded|exhausted|overloaded|unavailable|try again later/i.test(
                     msg
@@ -179,7 +275,6 @@ const generateWithVertex = async (contents: any[]) => {
                 continue;
             }
 
-            // Lỗi khác: dừng luôn
             throw err;
         }
     }
@@ -197,6 +292,14 @@ export default {
 
             if (!user) {
                 return ctx.badRequest('Thiếu thông tin khách hàng (user).');
+            }
+
+            // ===== Rate limit per user =====
+            const rate = checkRateLimit(user, ctx);
+            if (!rate.allowed) {
+                return ctx.badRequest(
+                    'Bạn đã dùng hết 50 lượt hỏi AI trong 24 giờ. Vui lòng thử lại sau.'
+                );
             }
 
             const contents = buildContentsForVertex(user, history, newMessage);
