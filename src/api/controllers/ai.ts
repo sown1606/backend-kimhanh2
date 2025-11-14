@@ -13,7 +13,7 @@ const REGION = (process.env.VERTEX_REGION || 'us-central1').trim();
 // Ưu tiên model, có thể chỉnh trong .env
 const MODEL_PRIORITY = (
     process.env.VERTEX_GEMINI_PRIORITY ||
-    'gemini-2.5-flash,gemini-1.5-flash,gemini-1.0-pro'
+    'gemini-2.5-flash'
 )
     .split(',')
     .map((m) => m.trim())
@@ -132,13 +132,13 @@ const getFengShuiPrompt = (user: any): string => {
     prompt += '\n---\n\n';
     prompt += '🎯 **CÁCH TRẢ LỜI CHO KHÁCH:**\n';
     prompt +=
-        'Hãy trả lời theo 3–5 mục rõ ràng, dùng tiêu đề in đậm theo dạng Markdown:\n';
+    '0. **Lời chào & bài thơ khai vàng** – Mở đầu bằng 1–2 câu chúc khách khi ghé tiệm vàng **Kim Hạnh II (Cổ Phong)**, sau đó tặng 1 bài thơ ngắn 4–6 câu, phong cách cổ phong nhẹ nhàng, nói về vàng, tài lộc, bình an.\n';
     prompt +=
-        '1. **Mở đầu & mệnh tổng quan** – Chào khách (anh/chị), tóm tắt mệnh/ngũ hành và vài tính cách nổi bật (2–3 câu).\n';
+    '1. **Mệnh tổng quan** – Tóm tắt mệnh/ngũ hành và vài tính cách nổi bật (2–3 câu).\n';
     prompt +=
         '2. **Màu sắc & loại vàng hợp mệnh** – Nêu rõ nên ưu tiên loại vàng/màu nào (vàng 24K, 18K, 14K…), màu nào nên hạn chế để tránh xung khắc.\n';
     prompt +=
-        '3. **Gợi ý kiểu trang sức** – Tập trung gợi ý vòng tay, lắc, nhẫn, bông tai… kiểu trơn, đính đá, chạm khắc… sao cho:\n';
+    '3. **Gợi ý kiểu trang sức** – Gợi ý vòng tay, lắc, nhẫn, bông tai… kiểu trơn, đính đá, chạm khắc… sao cho:\n';
     prompt +=
         '   - Hợp mệnh, hỗ trợ tài lộc, bình an.\n';
     prompt +=
